@@ -167,6 +167,15 @@ class AliasRoutingTests(unittest.TestCase):
                 conversation._generate_single_image(request, 1, 1)
         self.assertEqual(select.call_args.kwargs['model'], 'future-8')
 
+    def test_unavailable_model_is_explicit_client_error_not_auto_fallback(self):
+        request = conversation.ConversationRequest(model='web-image/retired-model', prompt='test')
+        with mock.patch.object(conversation.account_service, 'get_available_access_token',
+                               side_effect=ModelUnavailableError('retired model')):
+            with self.assertRaises(conversation.ImageGenerationError) as caught:
+                conversation._generate_single_image(request, 1, 1)
+        self.assertEqual(caught.exception.status_code, 400)
+        self.assertEqual(caught.exception.code, 'model_not_found')
+
 
 class DiscoveryApiTests(unittest.TestCase):
     def setUp(self):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from services.model_ids import web_image_slug
+from services.model_service import ModelUnavailableError
 
 import base64
 import json
@@ -1350,6 +1351,9 @@ def _generate_single_image(
                 plan_types=("plus", "team", "pro") if codex_model and not plan_type else None,
                 **({"model": web_image_slug(request.model)} if web_image_slug(request.model) else {}),
             )
+        except ModelUnavailableError as exc:
+            raise ImageGenerationError(str(exc), status_code=400, error_type="invalid_request_error",
+                                       code="model_not_found", param="model") from exc
         except RuntimeError as exc:
             raise ImageGenerationError(str(exc) or "image generation failed", account_email=account_email) from exc
 

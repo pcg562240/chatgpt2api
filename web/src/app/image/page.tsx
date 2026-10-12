@@ -152,14 +152,6 @@ function filterImageModels(items: Model[]): ImageModel[] {
     .filter((id, index, list) => (id === "gpt-image-2" || id.startsWith("web-image/") || /^(?:(?:plus|team|pro)-)?codex-gpt-image-2$/.test(id)) && list.indexOf(id) === index);
 }
 
-function normalizeStoredImageModel(value: string | null, availableModels: ImageModel[]): ImageModel {
-  const normalized = String(value || "").trim();
-  if (normalized && availableModels.includes(normalized)) {
-    return normalized;
-  }
-  return availableModels[0] || "gpt-image-2";
-}
-
 function buildReferenceImageFromResult(image: StoredImage, fileName: string): StoredReferenceImage | null {
   if (!image.b64_json) {
     return null;
@@ -700,7 +692,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
       const conversationId = window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY);
       const items = await listImageConversations();
       const previous = items.find((item) => item.id === conversationId)?.turns.at(-1)?.model;
-      setImageModel(previous || normalizeStoredImageModel(catalog.default_image_model, available));
+      // Keep explicit choices even if retired, rather than silently using another model.
+      setImageModel(previous || catalog.default_image_model || "gpt-image-2");
       imageModelsLoadedRef.current = true;
     }
   }, []);

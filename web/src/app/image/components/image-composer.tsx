@@ -124,8 +124,11 @@ export function ImageComposer({
     [referenceImages],
   );
   const modelOptions = useMemo(
-    () => imageModels.map((model) => ({ value: model, label: model })),
-    [imageModels],
+    () => [
+      ...(imageModels.includes(imageModel) ? [] : [{ value: imageModel, label: `${imageModel}（目录中已不可用）` }]),
+      ...imageModels.map((model) => ({ value: model, label: model })),
+    ],
+    [imageModels, imageModel],
   );
   const qualityLabel = qualityOptions.find((option) => option.value === imageQuality)?.label || "自动";
   const ratioLabel = imageRatio === "auto" ? "auto" : `${imageRatio}(${imageTier})`;
