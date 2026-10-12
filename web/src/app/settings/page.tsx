@@ -9,6 +9,7 @@ import { useAuthGuard } from "@/lib/use-auth-guard";
 import { BackupSettingsCard } from "./components/backup-settings-card";
 import { ApiDocsCard } from "./components/api-docs-card";
 import { ConfigCard } from "./components/config-card";
+import { ModelCatalogCard } from "./components/model-catalog-card";
 import { CPAPoolDialog } from "./components/cpa-pool-dialog";
 import { CPAPoolsCard } from "./components/cpa-pools-card";
 import { ImportBrowserDialog } from "./components/import-browser-dialog";
@@ -21,6 +22,7 @@ import { useSettingsStore } from "./store";
 
 const settingsTabs = [
   { value: "basic", title: "基础配置" },
+  { value: "models", title: "模型发现" },
   { value: "backup", title: "备份" },
   { value: "keys", title: "用户密钥" },
   { value: "api-docs", title: "接口接入" },
@@ -91,6 +93,9 @@ function SettingsPageContent() {
         </div>
         <TabsContent value="basic">
           <ConfigCard />
+        </TabsContent>
+        <TabsContent value="models">
+          <ModelCatalogCard />
         </TabsContent>
         <TabsContent value="proxy">
           <ProxyRuntimeCard />

@@ -34,15 +34,18 @@
 ### Docker 运行
 
 ```bash
-git clone git@github.com:basketikun/chatgpt2api.git
+git clone https://github.com/pcg562240/chatgpt2api.git
 cd chatgpt2api
-docker compose up -d
+cp .env.example .env
+# 编辑 .env，设置你自己的 CHATGPT2API_AUTH_KEY，再启动
+docker compose up -d --build
 ```
 
-启动前请先在 `config.json` 中设置 `auth-key`，也可以在 `docker-compose.yml` 中通过 `CHATGPT2API_AUTH_KEY` 覆盖。
+启动前在 `.env` 中设置 `CHATGPT2API_AUTH_KEY`，不要把密钥或账号 Token 提交到 Git。
+默认监听 `0.0.0.0:8030`，允许局域网访问；仅本机使用可设置 `CHATGPT2API_BIND_HOST=127.0.0.1`。
 
-- Web 面板：`http://localhost:3000`
-- API 地址：`http://localhost:3000/v1`
+- Web 面板：`http://localhost:8030`
+- API 地址：`http://localhost:8030/v1`
 - 数据目录：`./data`
 
 ### WARP / FlareSolverr 稳定代理部署
@@ -71,7 +74,7 @@ docker compose -f docker-compose.warp.yml up -d --build
 启动后端：
 
 ```bash
-git clone git@github.com:basketikun/chatgpt2api.git
+git clone https://github.com/pcg562240/chatgpt2api.git
 cd chatgpt2api
 uv sync
 uv run main.py
@@ -85,13 +88,11 @@ bun install
 bun run dev
 ```
 
-后续更新新版本：
+本 fork 更新代码后重新构建（不要拉取原作者镜像代替本 fork）：
 
 ```bash
-docker pull ghcr.io/basketikun/chatgpt2api:latest
-docker-compose down
-docker-compose up -d
-
+git pull --ff-only
+docker compose up -d --build
 ```
 
 ### 存储后端配置
@@ -119,8 +120,7 @@ environment:
 - 兼容 `POST /v1/images/edits` 图片编辑接口
 - 兼容面向图片场景的 `POST /v1/chat/completions`
 - 兼容面向图片场景的 `POST /v1/responses`
-- `GET /v1/models` 返回 `gpt-image-2`、`codex-gpt-image-2`、`auto`、`gpt-5`、`gpt-5-1`、`gpt-5-2`、`gpt-5-3`、`gpt-5-3-mini`、
-  `gpt-5-mini`
+- `GET /v1/models` 动态返回账号目录、已发现模型的 `web-image/` 生图候选入口和兼容别名
 - 支持通过 `n` 返回多张生成结果
 - 支持生成可编辑 PPT 文件
 - 支持生成可编辑 PSD 文件
@@ -170,6 +170,31 @@ environment:
     <td width="50%"><img src="https://i.ibb.co/rRWLG08q/new-api.png" alt="new api" border="0"></td>
   </tr>
 </table>
+
+## 账号模型发现（本 fork）
+
+1. 在号池导入网页账号，然后打开 **设置 → 模型发现**，选择当前账号，点击 **刷新当前账号模型**。
+2. 成功后显示上游真实返回的模型 ID、刷新时间和可选生图候选入口；刷新失败或返回空目录时保留最近成功结果。
+3. 选择 **全局默认生图模型** 并保存；生图页面的“图像设置 → 模型”也可选择模型或点击刷新。
+   新对话采用全局默认模型，已有对话继承最后一次提交的模型；API 省略 `model` 时也采用全局默认值。
+4. `GET /v1/models` 动态暴露模型，无需为每个新版本修改白名单。
+   普通聊天使用上游 ID；生图使用 `web-image/<上游ID>`，服务端移除前缀后原样传递。
+   例如上游返回 `new-model-id` 时，图片接口使用 `web-image/new-model-id`。
+   这样同一个模型的聊天与图片请求不会互相混淆。
+5. 模型按**具体账号**路由，不将同套餐的其他账号当成必然具有同样权限。
+   缓存保存在 `data/model_catalog.json`，只保存不透明账号标识、模型元数据和时间，不保存账号凭据。
+   禁用/删除账号后其目录不再参与路由；缓存可跨服务重启保留。
+
+管理接口（仍需 Bearer 密钥；刷新/改默认模型仅管理员）：
+
+- `GET /api/model-catalog?account_id=...`：读取账号目录及可选账号，不发起生成。
+- `POST /api/model-catalog/refresh`，JSON `{"account_id":"目录返回的账号ID"}`：强制刷新所选账号。
+- `POST /api/model-catalog/default`，JSON `{"model":"web-image/new-model-id"}`：保存默认生图模型。
+
+**边界：**“上游目录已发现”不等于“已验证可生图”。网页目录通常也含文本模型，因此生图入口明确标为候选。
+刷新不会消耗生图额度来逐个验证；实际权限、额度和图像能力以上游调用结果为准。
+只要上游模型目录和调用协议保持兼容，新增模型可以刷新即用；认证、接口协议或工具参数改变时仍需要适配代码。
+原生生成尺寸与速度不因模型发现功能得到保证；下述输出尺寸修复继续保留。
 
 ## API
 

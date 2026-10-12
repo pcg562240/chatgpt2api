@@ -339,6 +339,35 @@ export async function fetchModels() {
   return httpRequest<ModelListResponse>("/v1/models");
 }
 
+export type ModelCatalog = {
+  accounts: Array<{ id: string; label: string }>;
+  account_id: string;
+  models: Model[];
+  image_models: string[];
+  default_image_model: string;
+  updated_at: string | null;
+  source: "account_cache" | "not_refreshed";
+  generation_verified: boolean;
+  refreshed?: boolean;
+  error?: string;
+};
+
+export async function fetchModelCatalog(accountId = "") {
+  return httpRequest<ModelCatalog>(`/api/model-catalog?account_id=${encodeURIComponent(accountId)}`);
+}
+
+export async function refreshModelCatalog(accountId: string) {
+  return httpRequest<ModelCatalog>("/api/model-catalog/refresh", {
+    method: "POST", body: { account_id: accountId },
+  });
+}
+
+export async function saveDefaultImageModel(model: string) {
+  return httpRequest<{ default_image_model: string }>("/api/model-catalog/default", {
+    method: "POST", body: { model },
+  });
+}
+
 export async function createAccounts(tokens: string[], accounts: AccountImportPayload[] = []) {
   return httpRequest<AccountMutationResponse>("/api/accounts", {
     method: "POST",

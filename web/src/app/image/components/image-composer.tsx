@@ -1,5 +1,5 @@
 "use client";
-import { ArrowUp, ChevronDown, ImagePlus, Info, LoaderCircle, RectangleHorizontal, RectangleVertical, Square, X } from "lucide-react";
+import { ArrowUp, ChevronDown, ImagePlus, Info, LoaderCircle, RectangleHorizontal, RectangleVertical, RefreshCw, Square, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
 
 import { ImageLightbox } from "@/components/image-lightbox";
@@ -20,6 +20,8 @@ type ImageComposerProps = {
   imageQuality: string;
   imageModel: ImageModel;
   imageModels: ImageModel[];
+  onRefreshModels?: () => Promise<void>;
+  isRefreshingModels?: boolean;
   availableQuota: string;
   activeTaskCount: number;
   referenceImages: Array<{ name: string; dataUrl: string }>;
@@ -90,6 +92,8 @@ export function ImageComposer({
   imageQuality,
   imageModel,
   imageModels,
+  onRefreshModels,
+  isRefreshingModels,
   availableQuota,
   activeTaskCount,
   referenceImages,
@@ -356,7 +360,14 @@ export function ImageComposer({
                       >
                         <h3 className="mb-3 text-base font-semibold text-stone-950">图像设置</h3>
                         <div className="mb-3">
-                          <div className="mb-2 text-sm font-medium text-stone-900">模型</div>
+                          <div className="mb-2 flex items-center justify-between text-sm font-medium text-stone-900">
+                            模型
+                            {onRefreshModels && <button type="button" disabled={isRefreshingModels}
+                              onClick={() => void onRefreshModels()} className="inline-flex items-center gap-1 text-xs text-stone-500 disabled:opacity-50">
+                              <RefreshCw className={cn("size-3", isRefreshingModels && "animate-spin")} />刷新账号模型
+                            </button>}
+                          </div>
+                          <p className="mb-2 text-xs leading-5 text-stone-500">web-image/ 为上游模型的生图候选入口，未验证生图权限。多账号管理见设置 → 模型发现。</p>
                           <Select
                             value={imageModel}
                             onValueChange={(value) => {

@@ -14,16 +14,19 @@ def list_models() -> dict[str, Any]:
         return result
     seen = {str(item.get("id") or "").strip() for item in data if isinstance(item, dict)}
     dynamic_models: set[str] = set()
+    dynamic_models.update(model_catalog_service.image_model_ids())
     accounts = account_service.list_accounts()
     web_image_accounts = [
         account
         for account in accounts
         if isinstance(account, dict)
+        and account.get("status") not in {"禁用", "异常"}
     ]
     codex_types = {
         normalized
         for account in accounts
         if isinstance(account, dict)
+           and account.get("status") not in {"禁用", "异常"}
            and account_service._normalize_source_type(account.get("source_type")) == "codex"
            and (normalized := account_service._normalize_account_type(account.get("type")))
     }

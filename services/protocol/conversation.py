@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from services.model_ids import web_image_slug
+
 import base64
 import json
 import re
@@ -1346,6 +1348,7 @@ def _generate_single_image(
                 plan_type=plan_type,
                 source_type="codex" if codex_model else None,
                 plan_types=("plus", "team", "pro") if codex_model and not plan_type else None,
+                **({"model": web_image_slug(request.model)} if web_image_slug(request.model) else {}),
             )
         except RuntimeError as exc:
             raise ImageGenerationError(str(exc) or "image generation failed", account_email=account_email) from exc

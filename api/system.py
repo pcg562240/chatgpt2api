@@ -10,6 +10,9 @@ from pydantic import BaseModel, ConfigDict
 from api.support import require_admin, require_identity, resolve_image_base_url
 from services.backup_service import BackupError, backup_service
 from services.config import config
+from services.model_service import model_catalog_service
+from services.model_ids import web_image_slug
+from utils.helper import is_supported_image_model
 from services.image_service import (
     compress_images,
     delete_images,
@@ -33,6 +36,14 @@ class SettingsUpdateRequest(BaseModel):
 
 class ProxyTestRequest(BaseModel):
     url: str = ""
+
+
+class ModelRefreshRequest(BaseModel):
+    account_id: str = ""
+
+
+class DefaultImageModelRequest(BaseModel):
+    model: str
 
 
 class ClearanceTestRequest(BaseModel):
@@ -85,6 +96,32 @@ def create_router(app_version: str) -> APIRouter:
     async def get_third_party_apps(authorization: str | None = Header(default=None)):
         require_identity(authorization)
         return {"third_party_apps": config.get_third_party_apps_settings()}
+
+    @router.get("/api/model-catalog")
+    async def get_model_catalog(account_id: str = "", authorization: str | None = Header(default=None)):
+        require_identity(authorization)
+        try:
+            return await run_in_threadpool(model_catalog_service.snapshot, account_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+
+    @router.post("/api/model-catalog/refresh")
+    async def refresh_model_catalog(body: ModelRefreshRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        try:
+            return await run_in_threadpool(model_catalog_service.refresh_account, body.account_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+
+    @router.post("/api/model-catalog/default")
+    async def save_default_image_model(body: DefaultImageModelRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        model = body.model.strip()
+        if (not is_supported_image_model(model)
+                or (web_image_slug(model) and model not in model_catalog_service.image_model_ids())):
+            raise HTTPException(status_code=400, detail={"error": "请先刷新账号目录，再选择目录中的模型"})
+        await run_in_threadpool(config.update, {"default_image_model": model})
+        return {"default_image_model": config.default_image_model}
 
     @router.post("/api/settings")
     async def save_settings(body: SettingsUpdateRequest, authorization: str | None = Header(default=None)):

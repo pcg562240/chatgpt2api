@@ -20,6 +20,14 @@ docker-compose-local.yml
 # Environment variables
 .env
 .env.local
+.deployment-tools/
+docker-compose.override.yml
+DEPLOYMENT.local.txt
+deployment-check.py
+web/node_modules/
+web/.next/
+web/out/
+web/*.tsbuildinfo
 
 # Database files
 *.db

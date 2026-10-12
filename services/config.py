@@ -510,6 +510,10 @@ class ConfigStore:
         return str(self.data.get("global_system_prompt") or "").strip()
 
     @property
+    def default_image_model(self) -> str:
+        return str(self.data.get("default_image_model") or "gpt-image-2").strip() or "gpt-image-2"
+
+    @property
     def default_upstream_model_name(self) -> str:
         return str(self.data.get("default_upstream_model_name") or "gpt-5-5").strip()
 
@@ -579,6 +583,7 @@ class ConfigStore:
         data["ai_review"] = self.ai_review
         data["global_system_prompt"] = self.global_system_prompt
         data["default_upstream_model_name"] = self.default_upstream_model_name
+        data["default_image_model"] = self.default_image_model
         data["default_thinking_effort"] = self.default_thinking_effort
         data["backup"] = self.get_backup_settings()
         data["image_storage"] = self.get_image_storage_settings()

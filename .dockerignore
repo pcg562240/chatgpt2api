@@ -12,3 +12,12 @@ web/node_modules
 
 assets
 README.md
+.deployment-tools
+.env
+.env.*
+data
+docker-compose.override.yml
+DEPLOYMENT.local.txt
+deployment-check.py
+web/out
+web/*.tsbuildinfo

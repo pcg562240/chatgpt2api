@@ -104,5 +104,6 @@
       "url": "https://canvas.best"
     }
   },
-  "image_remove_conversation_after_result": true
+  "image_remove_conversation_after_result": true,
+  "default_image_model": "gpt-image-2"
 }

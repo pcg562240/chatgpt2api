@@ -4,6 +4,8 @@ from fastapi import APIRouter, Header, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
+from services.config import config
+
 from api.image_inputs import parse_image_edit_request, read_image_sources
 from api.support import require_identity, resolve_image_base_url
 from services.content_filter import check_request
@@ -14,7 +16,7 @@ from services.log_service import LoggedCall
 class ImageGenerationTaskRequest(BaseModel):
     client_task_id: str = Field(..., min_length=1)
     prompt: str = Field(..., min_length=1)
-    model: str = "gpt-image-2"
+    model: str = Field(default_factory=lambda: config.default_image_model)
     size: str | None = None
     quality: str = "auto"
 

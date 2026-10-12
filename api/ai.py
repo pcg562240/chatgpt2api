@@ -5,6 +5,8 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ConfigDict, Field
 
+from services.config import config
+
 from api.image_inputs import parse_image_edit_request, read_image_sources
 from api.support import require_identity, resolve_image_base_url
 from services.content_filter import check_request, request_shape, request_text
@@ -23,7 +25,7 @@ from services.protocol import (
 
 class ImageGenerationRequest(BaseModel):
     prompt: str = Field(..., min_length=1)
-    model: str = "gpt-image-2"
+    model: str = Field(default_factory=lambda: config.default_image_model)
     n: int = Field(default=1, ge=1, le=4)
     size: str | None = None
     quality: str = "auto"

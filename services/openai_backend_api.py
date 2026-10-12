@@ -24,6 +24,7 @@ from services.account_service import account_service
 from services.config import config
 from services.proxy_service import proxy_settings
 from utils.helper import UpstreamHTTPError, ensure_ok, iter_sse_payloads, new_uuid, split_image_model
+from services.model_ids import web_image_slug
 from utils.log import logger
 from utils.pow import build_legacy_requirements_token, build_proof_token, parse_pow_resources
 from utils.turnstile import solve_turnstile_token
@@ -563,6 +564,10 @@ class OpenAIBackendAPI:
 
     def _image_model_settings(self, model: str) -> tuple[str, str]:
         """把标准图片模型名映射为上游模型及思考强度。"""
+        discovered_slug = web_image_slug(model)
+        if discovered_slug:
+            # Exact upstream ID: do not strip suffixes or substitute a legacy model.
+            return discovered_slug, ""
         _, base_model = split_image_model(model)
         if not base_model:
             return "auto", ""

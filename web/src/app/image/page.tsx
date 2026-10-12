@@ -22,6 +22,8 @@ import {
   createImageGenerationTask,
   fetchAccounts,
   fetchModels,
+  fetchModelCatalog,
+  refreshModelCatalog,
   fetchImageTasks,
   resumeImagePoll,
   type Account,
@@ -147,7 +149,7 @@ function dataUrlToFile(dataUrl: string, fileName: string, mimeType?: string) {
 function filterImageModels(items: Model[]): ImageModel[] {
   return items
     .map((item) => String(item.id || "").trim())
-    .filter((id, index, list) => id.toLowerCase().includes("image") && list.indexOf(id) === index);
+    .filter((id, index, list) => (id === "gpt-image-2" || id.startsWith("web-image/") || /^(?:(?:plus|team|pro)-)?codex-gpt-image-2$/.test(id)) && list.indexOf(id) === index);
 }
 
 function normalizeStoredImageModel(value: string | null, availableModels: ImageModel[]): ImageModel {
@@ -470,6 +472,9 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
   const [imageHeight, setImageHeight] = useState("1024");
   const [imageQuality, setImageQuality] = useState("auto");
   const [imageModel, setImageModel] = useState<ImageModel>("gpt-image-2");
+  const defaultImageModelRef = useRef("gpt-image-2");
+  const imageModelsLoadedRef = useRef(false);
+  const [isRefreshingModels, setIsRefreshingModels] = useState(false);
   const [imageModels, setImageModels] = useState<ImageModel[]>(["gpt-image-2"]);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [referenceImageFiles, setReferenceImageFiles] = useState<File[]>([]);
@@ -685,36 +690,54 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     };
   }, [loadHistory]);
 
-  useEffect(() => {
-    let cancelled = false;
-
-    const loadImageModels = async () => {
-      try {
-        const data = await fetchModels();
-        const available = filterImageModels(Array.isArray(data.data) ? data.data : []);
-        if (cancelled || available.length === 0) {
-          return;
-        }
-        setImageModels(available);
-        const storedModel = typeof window !== "undefined" ? window.localStorage.getItem(IMAGE_MODEL_STORAGE_KEY) : null;
-        setImageModel((current) => {
-          if (available.includes(current)) {
-            return current;
-          }
-          return normalizeStoredImageModel(storedModel, available);
-        });
-      } catch {
-        if (!cancelled) {
-          setImageModels(["gpt-image-2"]);
-        }
-      }
-    };
-
-    void loadImageModels();
-    return () => {
-      cancelled = true;
-    };
+  const loadImageModels = useCallback(async () => {
+    const [data, catalog] = await Promise.all([fetchModels(), fetchModelCatalog()]);
+    const available = filterImageModels(Array.isArray(data.data) ? data.data : []);
+    if (available.length === 0) return;
+    defaultImageModelRef.current = catalog.default_image_model;
+    setImageModels(available);
+    if (!imageModelsLoadedRef.current) {
+      const conversationId = window.localStorage.getItem(ACTIVE_CONVERSATION_STORAGE_KEY);
+      const items = await listImageConversations();
+      const previous = items.find((item) => item.id === conversationId)?.turns.at(-1)?.model;
+      setImageModel(previous || normalizeStoredImageModel(catalog.default_image_model, available));
+      imageModelsLoadedRef.current = true;
+    }
   }, []);
+
+  useEffect(() => {
+    const load = () => { void loadImageModels().catch(() => {}); };
+    load();
+    window.addEventListener("focus", load);
+    window.addEventListener("model-catalog-updated", load);
+    return () => {
+      window.removeEventListener("focus", load);
+      window.removeEventListener("model-catalog-updated", load);
+    };
+  }, [loadImageModels]);
+
+  const handleRefreshModels = async () => {
+    setIsRefreshingModels(true);
+    try {
+      const catalog = await fetchModelCatalog();
+      if (!catalog.account_id) throw new Error("请先导入正常的网页账号");
+      const result = await refreshModelCatalog(catalog.account_id);
+      if (!result.refreshed) throw new Error(result.error || "刷新失败，已保留旧目录");
+      await loadImageModels();
+      toast.success(`已发现 ${result.models.length} 个模型；生图权限需实际调用确认`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "刷新模型失败");
+    } finally {
+      setIsRefreshingModels(false);
+    }
+  };
+
+  // Each conversation inherits its last submitted model; a new draft uses the global default.
+  useEffect(() => {
+    if (isLoadingHistory) return;
+    const conversation = conversationsRef.current.find((item) => item.id === selectedConversationId);
+    if (conversation?.turns.length) setImageModel(conversation.turns.at(-1)!.model);
+  }, [selectedConversationId, isLoadingHistory]);
 
   const loadQuota = useCallback(async () => {
     if (!isAdmin) {
@@ -922,6 +945,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     const btn = scrollToLatestBtnRef.current;
     if (btn) btn.style.display = "none";
     setSelectedConversationId(null);
+    setImageModel(defaultImageModelRef.current);
     resetComposer();
     textareaRef.current?.focus();
   };
@@ -1729,6 +1753,8 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             imageQuality={imageQuality}
             imageModel={imageModel}
             imageModels={imageModels}
+            onRefreshModels={isAdmin ? handleRefreshModels : undefined}
+            isRefreshingModels={isRefreshingModels}
             availableQuota={availableQuota}
             activeTaskCount={activeTaskCount}
             referenceImages={referenceImages}

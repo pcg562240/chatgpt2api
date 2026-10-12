@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from curl_cffi import requests
 from fastapi import HTTPException
 from services.proxy_service import proxy_settings
+from services.model_ids import web_image_slug
 from utils.log import logger
 
 BASE_IMAGE_MODELS = {"gpt-image-2", "codex-gpt-image-2"}
@@ -107,6 +108,9 @@ def new_uuid() -> str:
 
 
 def split_image_model(model: object) -> tuple[str | None, str | None]:
+    discovered_slug = web_image_slug(model)
+    if discovered_slug:
+        return None, discovered_slug
     normalized = str(model or "").strip().lower()
     if not normalized:
         return None, None
@@ -127,6 +131,8 @@ def is_supported_image_model(model: object) -> bool:
 
 
 def is_codex_image_model(model: object) -> bool:
+    if web_image_slug(model):
+        return False
     _, base_model = split_image_model(model)
     return base_model == CODEX_IMAGE_MODEL
 
