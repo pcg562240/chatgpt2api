@@ -518,6 +518,8 @@ class ImageTaskService:
                 "b64_json",
                 "",
                 int(time.time()),
+                size=size,
+                max_images=1,
             )["data"]
             self._update_task(key, status=TASK_STATUS_SUCCESS, data=data, error="", duration_ms=int((time.time() - started) * 1000))
             self._log_call(

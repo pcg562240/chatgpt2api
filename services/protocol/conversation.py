@@ -14,6 +14,7 @@ import tiktoken
 from services.account_service import account_service
 from services.config import config
 from services.image_storage_service import image_storage_service
+from services.image_output import normalize_image_output, parse_output_size
 from services.openai_backend_api import ImageContentPolicyError, ImagePollTimeoutError, OpenAIBackendAPI
 from utils.helper import (
     IMAGE_MODELS,
@@ -215,7 +216,8 @@ def assistant_history_messages(messages: list[dict[str, Any]]) -> list[str]:
 
 
 def build_image_prompt(prompt: str, size: str | None, quality: str = "auto") -> str:
-    hints = []
+    # Every pool worker generates exactly one image, even when the API requests n > 1.
+    hints = ["只生成一张图片。"]
     if size:
         hints.append(f"输出图片尺寸为 {size}。")
     if quality:
@@ -269,23 +271,37 @@ def format_image_result(
     base_url: str | None = None,
     created: int | None = None,
     message: str = "",
+    *,
+    size: str | None = None,
+    max_images: int | None = None,
 ) -> dict[str, Any]:
     data: list[dict[str, Any]] = []
     for item in items:
+        if max_images is not None and len(data) >= max_images:
+            break
         b64_json = str(item.get("b64_json") or "").strip()
         if not b64_json:
             continue
         revised_prompt = str(item.get("revised_prompt") or prompt).strip() or prompt
+        try:
+            image_bytes, metadata = normalize_image_output(base64.b64decode(b64_json), size)
+        except Exception as exc:
+            raise ImageGenerationError("upstream returned an invalid image", code="invalid_image") from exc
+        if metadata:
+            b64_json = base64.b64encode(image_bytes).decode("ascii")
+        image_url = save_image_bytes(image_bytes, base_url)
         if response_format == "b64_json":
             data.append({
                 "b64_json": b64_json,
-                "url": save_image_bytes(base64.b64decode(b64_json), base_url),
+                "url": image_url,
                 "revised_prompt": revised_prompt,
+                **metadata,
             })
         else:
             data.append({
-                "url": save_image_bytes(base64.b64decode(b64_json), base_url),
+                "url": image_url,
                 "revised_prompt": revised_prompt,
+                **metadata,
             })
     result: dict[str, Any] = {"created": created or int(time.time()), "data": data}
     if message and not data:
@@ -1003,7 +1019,7 @@ def stream_image_outputs(
             request.progress_callback("receiving_image")
         image_items = [
             {"b64_json": base64.b64encode(image_data).decode("ascii")}
-            for image_data in backend.download_image_bytes(image_urls)
+            for image_data in backend.download_image_bytes(image_urls[:1])
         ]
         data = format_image_result(
             image_items,
@@ -1011,6 +1027,8 @@ def stream_image_outputs(
             request.response_format,
             request.base_url,
             int(time.time()),
+            size=request.size,
+            max_images=1,
         )["data"]
         if data:
             yield ImageOutput(kind="result", model=request.model, index=index, total=total, data=data, conversation_id=conversation_id)
@@ -1100,7 +1118,7 @@ def stream_image_outputs(
                         request.progress_callback("receiving_image")
                     image_items = [
                         {"b64_json": base64.b64encode(image_data).decode("ascii")}
-                        for image_data in backend.download_image_bytes(image_urls)
+                        for image_data in backend.download_image_bytes(image_urls[:1])
                     ]
                     data = format_image_result(
                         image_items,
@@ -1108,6 +1126,8 @@ def stream_image_outputs(
                         request.response_format,
                         request.base_url,
                         int(time.time()),
+                        size=request.size,
+                        max_images=1,
                     )["data"]
                     if data:
                         yield ImageOutput(kind="result", model=request.model, index=index, total=total, data=data, conversation_id=conversation_id)
@@ -1212,7 +1232,7 @@ def stream_image_outputs(
                     request.progress_callback("receiving_image")
                 image_items = [
                     {"b64_json": base64.b64encode(image_data).decode("ascii")}
-                    for image_data in backend.download_image_bytes(image_urls)
+                    for image_data in backend.download_image_bytes(image_urls[:1])
                 ]
                 data = format_image_result(
                     image_items,
@@ -1220,6 +1240,8 @@ def stream_image_outputs(
                     request.response_format,
                     request.base_url,
                     int(time.time()),
+                    size=request.size,
+                    max_images=1,
                 )["data"]
                 if data:
                     yield ImageOutput(kind="result", model=request.model, index=index, total=total, data=data, conversation_id=conversation_id)
@@ -1280,6 +1302,8 @@ def stream_codex_image_outputs(
         request.response_format,
         request.base_url,
         int(time.time()),
+        size=request.size,
+        max_images=1,
     )["data"]
     if data:
         yield ImageOutput(kind="result", model=request.model, index=index, total=total, data=data)
@@ -1528,6 +1552,12 @@ def _generate_single_image(
 
 def stream_image_outputs_with_pool(request: ConversationRequest) -> Iterator[ImageOutput]:
     """并行生成多张图片，每张图片使用独立线程和账号，互不阻塞。"""
+    # Validate before acquiring an account or consuming upstream image quota.
+    try:
+        parse_output_size(request.size)
+    except ValueError as exc:
+        raise ImageGenerationError(str(exc), status_code=400, error_type="invalid_request_error",
+                                   code="invalid_size", param="size") from exc
     if not is_supported_image_model(request.model):
         raise ImageGenerationError("unsupported image model,supported models: " + ", ".join(sorted(IMAGE_MODELS)))
 
