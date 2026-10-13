@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { LoaderCircle, RefreshCw, Save } from "lucide-react";
+import { LoaderCircle, RefreshCw, Save, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { fetchModelCatalog, refreshModelCatalog, saveDefaultImageModel, type ModelCatalog } from "@/lib/api";
+import { CustomImageModelInput } from "@/components/custom-image-model-input";
+import { imageModelLabel } from "@/lib/image-models";
+import { addCustomImageModel, removeCustomImageModel, fetchModelCatalog, refreshModelCatalog, saveDefaultImageModel, type ModelCatalog } from "@/lib/api";
 
 export function ModelCatalogCard() {
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
@@ -72,6 +74,34 @@ export function ModelCatalogCard() {
     }
   };
 
+  const addCustom = async (model: string) => {
+    setBusy(true);
+    try {
+      const result = await addCustomImageModel(model);
+      // Keep the selected account's directory visible; manual models are global.
+      const current = await fetchModelCatalog(catalog?.account_id);
+      setCatalog(current);
+      setSelected(result.registered_model);
+      toast.success("模型已添加并选中；如需默认使用，请点击保存默认模型");
+      window.dispatchEvent(new Event("model-catalog-updated"));
+    } finally { setBusy(false); }
+  };
+
+  const removeCustom = async (model: string) => {
+    setBusy(true);
+    setError("");
+    try {
+      await removeCustomImageModel(model);
+      const current = await fetchModelCatalog(catalog?.account_id);
+      setCatalog(current);
+      if (selected === `web-image/${model}`) setSelected(current.default_image_model);
+      window.dispatchEvent(new Event("model-catalog-updated"));
+      toast.success("自定义模型已删除");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "删除失败");
+    } finally { setBusy(false); }
+  };
+
   const options = catalog?.image_models || ["gpt-image-2"];
   const selectedMissing = !!selected && !options.includes(selected);
   const selectClass = "h-10 w-full rounded-xl border border-stone-200 bg-white px-3 text-sm";
@@ -109,16 +139,28 @@ export function ModelCatalogCard() {
             <select aria-label="全局默认生图模型" className={selectClass} value={selected}
               disabled={busy || !catalog} onChange={(e) => setSelected(e.target.value)}>
               {selectedMissing && <option value={selected}>{selected}（不在当前账号目录）</option>}
-              {options.map((model) => <option key={model} value={model}>{model}</option>)}
+              {options.map((model) => <option key={model} value={model}>{imageModelLabel(model)}</option>)}
             </select>
           </label>
           <p className="text-xs leading-6 text-amber-800">
-            web-image/ 前缀表示使用该上游模型请求生图，是候选入口，不代表已验证生图权限。
+            已内置 Flare 和 Sunburst；web-image/ 前缀表示目录发现或手动添加的上游模型入口，不代表已验证生图权限。
             普通聊天继续使用不带此前缀的模型 ID。目录刷新不保证新模型支持生图、指定原生尺寸或更快生成。
           </p>
           <Button onClick={() => void save()} disabled={busy || !catalog || selectedMissing || !selected}>
             <Save className="size-4" />保存默认模型
           </Button>
+        </div>
+        <div className="space-y-3 rounded-xl border border-stone-200 p-4">
+          <CustomImageModelInput onAdd={addCustom} disabled={busy || !catalog} />
+          <p className="text-xs leading-5 text-amber-800">网页目录可能省略可用的生图模型。自定义模型不受目录限制，使用可用网页账号池；实际权限及生图能力由上游决定。</p>
+          {!!catalog?.custom_image_models?.length && <ul className="space-y-2">
+            {catalog.custom_image_models.map((model) => <li key={model} className="flex items-center justify-between gap-2 text-xs">
+              <span className="break-all font-mono">web-image/{model}（自定义·未验证）</span>
+              <Button type="button" size="sm" variant="ghost" aria-label={`删除自定义模型 ${model}`}
+                disabled={busy || catalog.default_image_model === `web-image/${model}`}
+                onClick={() => void removeCustom(model)}><Trash2 className="size-3" />删除</Button>
+            </li>)}
+          </ul>}
         </div>
         {catalog && catalog.models.length > 0 && (
           <div className="max-h-72 overflow-auto rounded-xl border border-stone-200">

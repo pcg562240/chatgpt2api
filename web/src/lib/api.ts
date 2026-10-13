@@ -344,6 +344,8 @@ export type ModelCatalog = {
   account_id: string;
   models: Model[];
   image_models: string[];
+  builtin_image_models: string[];
+  custom_image_models: string[];
   default_image_model: string;
   updated_at: string | null;
   source: "account_cache" | "not_refreshed";
@@ -365,6 +367,18 @@ export async function refreshModelCatalog(accountId: string) {
 export async function saveDefaultImageModel(model: string) {
   return httpRequest<{ default_image_model: string }>("/api/model-catalog/default", {
     method: "POST", body: { model },
+  });
+}
+
+export async function addCustomImageModel(model: string) {
+  return httpRequest<ModelCatalog & { registered_model: string }>("/api/model-catalog/custom", {
+    method: "POST", body: { model },
+  });
+}
+
+export async function removeCustomImageModel(model: string) {
+  return httpRequest<ModelCatalog>("/api/model-catalog/custom", {
+    method: "DELETE", body: { model },
   });
 }
 

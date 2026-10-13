@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 import api.system as system_api
 from services.account_service import AccountService
-from services.model_ids import catalog_account_id
+from services.model_ids import BUILTIN_WEB_IMAGE_MODELS, catalog_account_id
 from services.model_service import ModelCatalogService, ModelUnavailableError
 from services.openai_backend_api import OpenAIBackendAPI
 from services.protocol import conversation, openai_v1_models
@@ -52,7 +52,7 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(self.closed, self.calls)
         self.assertTrue(result['refreshed'])
         self.assertEqual(result['account_id'], self.second)
-        self.assertEqual(result['image_models'], ['gpt-image-2', 'web-image/other-9'])
+        self.assertEqual(result['image_models'], ['gpt-image-2', *BUILTIN_WEB_IMAGE_MODELS, 'web-image/other-9'])
         self.assertFalse(result['generation_verified'])
         self.assertEqual(len(result['accounts']), 2)  # codex not sent to web catalog
 

@@ -14,7 +14,8 @@ from typing import Any
 
 from services.account_service import AccountService, account_service
 from services.config import DATA_DIR, config
-from services.model_ids import WEB_IMAGE_PREFIX, catalog_account_id, valid_model_id
+from services.model_ids import (BUILTIN_WEB_IMAGE_MODELS, WEB_IMAGE_PREFIX, catalog_account_id,
+                               custom_image_slug, valid_model_id)
 from services.openai_backend_api import OpenAIBackendAPI
 from utils.log import logger
 
@@ -49,11 +50,19 @@ class ModelCatalogService:
         self._anonymous_models: dict[str, dict[str, Any]] = {}
         self._catalogs: dict[str, dict[str, Any]] = {}
         self._selected_account_id = ""
+        self._custom_image_models: set[str] = set()
         self._cache_path = cache_path
         if cache_path and cache_path.exists():
             try:
                 payload = json.loads(cache_path.read_text(encoding="utf-8"))
                 self._selected_account_id = str(payload.get("selected_account_id") or "")
+                for slug in payload.get("custom_image_models", []):
+                    try:
+                        normalized = custom_image_slug(slug)
+                        if normalized not in BUILTIN_WEB_IMAGE_MODELS:
+                            self._custom_image_models.add(normalized)
+                    except (ValueError, AttributeError):
+                        continue
                 for key, entry in payload.get("accounts", {}).items():
                     models = self._model_map({"data": entry["models"]})
                     self._catalogs[key] = {"models": models, "updated_at": str(entry["updated_at"])}
@@ -112,7 +121,8 @@ class ModelCatalogService:
     def _persist(self) -> None:
         if not self._cache_path:
             return
-        payload = {"version": 1, "selected_account_id": self._selected_account_id, "accounts": {
+        payload = {"version": 2, "selected_account_id": self._selected_account_id,
+                   "custom_image_models": sorted(self._custom_image_models), "accounts": {
             key: {"updated_at": entry["updated_at"], "models": list(entry["models"].values())}
             for key, entry in self._catalogs.items()
         }}
@@ -185,7 +195,51 @@ class ModelCatalogService:
             slugs = {slug for key, entry in self._catalogs.items()
                      if key in active and (not account_id or key == account_id)
                      for slug in entry["models"]}
+            if active and (not account_id or account_id in active):
+                slugs.update(self._custom_image_models)
             return [WEB_IMAGE_PREFIX + slug for slug in sorted(slugs)]
+
+    def route_for_image_model(self, model: str) -> ModelRoute:
+        """Manual/builtin IDs are opt-in web routes, not text catalog claims."""
+        with self._lock:
+            if model in BUILTIN_WEB_IMAGE_MODELS or model in self._custom_image_models:
+                accounts = self._active_accounts()
+                return ModelRoute(
+                    account_types=frozenset(plan for a in accounts.values() if
+                        (plan := self._accounts._normalize_account_type(a.get("type")))),
+                    account_ids=frozenset(accounts),
+                )
+        return self.route_for_model(model)
+
+    def add_custom_image_model(self, model: str) -> str:
+        slug = custom_image_slug(model)
+        if slug in BUILTIN_WEB_IMAGE_MODELS:
+            return slug
+        with self._lock:
+            if slug not in self._custom_image_models:
+                if len(self._custom_image_models) >= 100:
+                    raise ValueError("自定义模型最多保存 100 个，请先删除不用的模型")
+                self._custom_image_models.add(slug)
+                try:
+                    self._persist()
+                except OSError:
+                    self._custom_image_models.remove(slug)
+                    raise
+        return WEB_IMAGE_PREFIX + slug
+
+    def remove_custom_image_model(self, model: str) -> None:
+        slug = custom_image_slug(model)
+        with self._lock:
+            if slug not in self._custom_image_models:
+                raise ValueError("该模型不是已保存的自定义模型")
+            if config.default_image_model == WEB_IMAGE_PREFIX + slug:
+                raise ValueError("请先将全局默认模型切换到其他模型再删除")
+            self._custom_image_models.remove(slug)
+            try:
+                self._persist()
+            except OSError:
+                self._custom_image_models.add(slug)
+                raise
 
     def snapshot(self, account_id: str = "") -> dict[str, Any]:
         with self._lock:
@@ -199,7 +253,9 @@ class ModelCatalogService:
                              for i, (key, a) in enumerate(accounts.items(), 1)],
                 "account_id": selected,
                 "models": list(entry.get("models", {}).values()),
-                "image_models": ["gpt-image-2", *self.image_model_ids(selected)],
+                "image_models": ["gpt-image-2", *BUILTIN_WEB_IMAGE_MODELS, *self.image_model_ids(selected)],
+                "builtin_image_models": list(BUILTIN_WEB_IMAGE_MODELS),
+                "custom_image_models": sorted(self._custom_image_models),
                 "default_image_model": config.default_image_model,
                 "updated_at": entry.get("updated_at"),
                 "source": "account_cache" if entry else "not_refreshed",

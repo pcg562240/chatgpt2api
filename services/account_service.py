@@ -974,9 +974,9 @@ class AccountService:
         selection = {}
         if model:
             from services.model_service import model_catalog_service, ModelUnavailableError
-            route = model_catalog_service.route_for_model(model)
+            route = model_catalog_service.route_for_image_model(model)
             if not route.account_ids:
-                raise ModelUnavailableError(f"model {model!r} is not advertised by any active web account; refresh its catalog first")
+                raise ModelUnavailableError(f"model {model!r} has no eligible web account; refresh its catalog or register it as a custom image model")
             selection["eligible_account_ids"] = route.account_ids
         max_attempts = 20  # 防止无限循环
         attempted_tokens: set[str] = set()

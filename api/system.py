@@ -119,9 +119,31 @@ def create_router(app_version: str) -> APIRouter:
         model = body.model.strip()
         if (not is_supported_image_model(model)
                 or (web_image_slug(model) and model not in model_catalog_service.image_model_ids())):
-            raise HTTPException(status_code=400, detail={"error": "请先刷新账号目录，再选择目录中的模型"})
+            raise HTTPException(status_code=400, detail={"error": "请选择内置模型、刷新账号目录，或先添加自定义模型"})
         await run_in_threadpool(config.update, {"default_image_model": model})
         return {"default_image_model": config.default_image_model}
+
+    @router.post("/api/model-catalog/custom")
+    async def add_custom_image_model(body: DefaultImageModelRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        try:
+            model = await run_in_threadpool(model_catalog_service.add_custom_image_model, body.model)
+            return {**model_catalog_service.snapshot(), "registered_model": model}
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail={"error": "模型保存失败，请检查磁盘状态"}) from exc
+
+    @router.delete("/api/model-catalog/custom")
+    async def remove_custom_image_model(body: DefaultImageModelRequest, authorization: str | None = Header(default=None)):
+        require_admin(authorization)
+        try:
+            await run_in_threadpool(model_catalog_service.remove_custom_image_model, body.model)
+            return model_catalog_service.snapshot()
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail={"error": str(exc)}) from exc
+        except OSError as exc:
+            raise HTTPException(status_code=500, detail={"error": "模型删除失败，请检查磁盘状态"}) from exc
 
     @router.post("/api/settings")
     async def save_settings(body: SettingsUpdateRequest, authorization: str | None = Header(default=None)):

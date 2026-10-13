@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from services.model_ids import web_image_slug
+from services.model_ids import BUILTIN_WEB_IMAGE_MODELS, web_image_slug
 from services.model_service import ModelUnavailableError
 
 import base64
@@ -21,6 +21,7 @@ from services.image_output import normalize_image_output, parse_output_size
 from services.openai_backend_api import ImageContentPolicyError, ImagePollTimeoutError, OpenAIBackendAPI
 from utils.helper import (
     IMAGE_MODELS,
+    UpstreamHTTPError,
     extract_image_from_message_content,
     is_codex_image_model,
     is_supported_image_model,
@@ -1343,13 +1344,14 @@ def _generate_single_image(
         try:
             if request.progress_callback:
                 request.progress_callback("getting_account")
-            plan_type, _ = split_image_model(request.model)
+            plan_type, base_model = split_image_model(request.model)
             codex_model = is_codex_image_model(request.model)
             token = account_service.get_available_access_token(
                 plan_type=plan_type,
                 source_type="codex" if codex_model else None,
                 plan_types=("plus", "team", "pro") if codex_model and not plan_type else None,
-                **({"model": web_image_slug(request.model)} if web_image_slug(request.model) else {}),
+                **({"model": web_image_slug(request.model) or base_model}
+                   if web_image_slug(request.model) or base_model in BUILTIN_WEB_IMAGE_MODELS else {}),
             )
         except ModelUnavailableError as exc:
             raise ImageGenerationError(str(exc), status_code=400, error_type="invalid_request_error",
@@ -1507,6 +1509,13 @@ def _generate_single_image(
         except Exception as exc:
             account_service.mark_image_result(token, False)
             last_error = str(exc)
+            if isinstance(exc, UpstreamHTTPError) and isinstance(exc.body, dict):
+                detail = exc.body.get("error", exc.body.get("detail", {}))
+                if isinstance(detail, dict) and detail.get("code") in {"model_not_found", "invalid_model", "model_not_available"}:
+                    raise ImageGenerationError(
+                        f"上游不接受模型 {request.model}：模型不存在或当前账号没有权限；未切换其他模型。",
+                        status_code=400, error_type="invalid_request_error", code="model_not_found", param="model",
+                    ) from exc
             logger.warning({
                 "event": "image_stream_fail",
                 "request_token": token,
@@ -1566,7 +1575,8 @@ def stream_image_outputs_with_pool(request: ConversationRequest) -> Iterator[Ima
         raise ImageGenerationError(str(exc), status_code=400, error_type="invalid_request_error",
                                    code="invalid_size", param="size") from exc
     if not is_supported_image_model(request.model):
-        raise ImageGenerationError("unsupported image model,supported models: " + ", ".join(sorted(IMAGE_MODELS)))
+        raise ImageGenerationError("Unsupported image model. Select a builtin, or register a custom ID and use web-image/<ID>.",
+                                   status_code=400, error_type="invalid_request_error", code="model_not_found", param="model")
 
     if request.n <= 1:
         # 单张图片，直接执行（无需线程池开销）

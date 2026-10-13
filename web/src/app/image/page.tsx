@@ -24,6 +24,7 @@ import {
   fetchModels,
   fetchModelCatalog,
   refreshModelCatalog,
+  addCustomImageModel,
   fetchImageTasks,
   resumeImagePoll,
   type Account,
@@ -32,6 +33,7 @@ import {
   type ImageTask,
 } from "@/lib/api";
 import { useAuthGuard } from "@/lib/use-auth-guard";
+import { BUILTIN_WEB_IMAGE_MODELS } from "@/lib/image-models";
 import { useSettingsStore } from "@/app/settings/store";
 import {
   clearImageConversations,
@@ -149,7 +151,7 @@ function dataUrlToFile(dataUrl: string, fileName: string, mimeType?: string) {
 function filterImageModels(items: Model[]): ImageModel[] {
   return items
     .map((item) => String(item.id || "").trim())
-    .filter((id, index, list) => (id === "gpt-image-2" || id.startsWith("web-image/") || /^(?:(?:plus|team|pro)-)?codex-gpt-image-2$/.test(id)) && list.indexOf(id) === index);
+    .filter((id, index, list) => (id === "gpt-image-2" || BUILTIN_WEB_IMAGE_MODELS.includes(id) || id.startsWith("web-image/") || /^(?:(?:plus|team|pro)-)?codex-gpt-image-2$/.test(id)) && list.indexOf(id) === index);
 }
 
 function buildReferenceImageFromResult(image: StoredImage, fileName: string): StoredReferenceImage | null {
@@ -723,6 +725,14 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
     } finally {
       setIsRefreshingModels(false);
     }
+  };
+
+  const handleAddCustomModel = async (model: string) => {
+    const result = await addCustomImageModel(model);
+    setImageModels((current) => [...new Set([...current, result.registered_model])]);
+    setImageModel(result.registered_model);
+    window.dispatchEvent(new Event("model-catalog-updated"));
+    toast.success("模型已保存并选中；发送提示词才会生图");
   };
 
   // Each conversation inherits its last submitted model; a new draft uses the global default.
@@ -1747,6 +1757,7 @@ function ImagePageContent({ isAdmin }: { isAdmin: boolean }) {
             imageModel={imageModel}
             imageModels={imageModels}
             onRefreshModels={isAdmin ? handleRefreshModels : undefined}
+            onAddCustomModel={isAdmin ? handleAddCustomModel : undefined}
             isRefreshingModels={isRefreshingModels}
             availableQuota={availableQuota}
             activeTaskCount={activeTaskCount}

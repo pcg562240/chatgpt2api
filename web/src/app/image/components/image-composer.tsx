@@ -3,6 +3,8 @@ import { ArrowUp, ChevronDown, ImagePlus, Info, LoaderCircle, RectangleHorizonta
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type RefObject } from "react";
 
 import { ImageLightbox } from "@/components/image-lightbox";
+import { CustomImageModelInput } from "@/components/custom-image-model-input";
+import { imageModelLabel } from "@/lib/image-models";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -21,6 +23,7 @@ type ImageComposerProps = {
   imageModel: ImageModel;
   imageModels: ImageModel[];
   onRefreshModels?: () => Promise<void>;
+  onAddCustomModel?: (model: string) => Promise<void>;
   isRefreshingModels?: boolean;
   availableQuota: string;
   activeTaskCount: number;
@@ -93,6 +96,7 @@ export function ImageComposer({
   imageModel,
   imageModels,
   onRefreshModels,
+  onAddCustomModel,
   isRefreshingModels,
   availableQuota,
   activeTaskCount,
@@ -126,7 +130,7 @@ export function ImageComposer({
   const modelOptions = useMemo(
     () => [
       ...(imageModels.includes(imageModel) ? [] : [{ value: imageModel, label: `${imageModel}（目录中已不可用）` }]),
-      ...imageModels.map((model) => ({ value: model, label: model })),
+      ...imageModels.map((model) => ({ value: model, label: imageModelLabel(model) })),
     ],
     [imageModels, imageModel],
   );
@@ -134,7 +138,7 @@ export function ImageComposer({
   const ratioLabel = imageRatio === "auto" ? "auto" : `${imageRatio}(${imageTier})`;
   const imageSizeLabel = `${qualityLabel} · ${ratioLabel} · ${imageCount || 1} 张`;
   const selectedModelLabel = modelOptions.find((option) => option.value === imageModel)?.label || imageModel;
-  const isCodexModel = imageModel.toLowerCase().includes("codex");
+  const isCodexModel = /^(?:(?:plus|team|pro)-)?codex-gpt-image-2$/.test(imageModel);
 
   useEffect(() => {
     if (!isSizeMenuOpen) {
@@ -353,12 +357,13 @@ export function ImageComposer({
                     {isSizeMenuOpen ? (
                       <div
                         ref={sizeMenuRef}
-                        className="fixed z-[80] max-h-[62dvh] overflow-y-auto rounded-[24px] border border-stone-200/70 bg-white p-4 shadow-[0_30px_90px_-34px_rgba(15,23,42,0.42)] sm:max-h-none sm:overflow-visible"
+                        className="fixed z-[80] overflow-y-auto rounded-[24px] border border-stone-200/70 bg-white p-4 shadow-[0_30px_90px_-34px_rgba(15,23,42,0.42)]"
                         style={{
                           top: sizeMenuPos.top,
                           left: sizeMenuPos.left,
                           transform: "translateY(-100%)",
                           width: "min(460px, calc(100vw - 2rem))",
+                          maxHeight: Math.max(160, sizeMenuPos.top - 16),
                         }}
                       >
                         <h3 className="mb-3 text-base font-semibold text-stone-950">图像设置</h3>
@@ -370,7 +375,7 @@ export function ImageComposer({
                               <RefreshCw className={cn("size-3", isRefreshingModels && "animate-spin")} />刷新账号模型
                             </button>}
                           </div>
-                          <p className="mb-2 text-xs leading-5 text-stone-500">web-image/ 为上游模型的生图候选入口，未验证生图权限。多账号管理见设置 → 模型发现。</p>
+                          <p className="mb-2 text-xs leading-5 text-stone-500">已内置 Flare / Sunburst。web-image/ 为目录发现或手动添加的候选入口；模型管理见设置 → 模型发现。</p>
                           <Select
                             value={imageModel}
                             onValueChange={(value) => {
@@ -406,6 +411,7 @@ export function ImageComposer({
                               ))}
                             </SelectContent>
                           </Select>
+                          {onAddCustomModel && <div className="mt-3"><CustomImageModelInput onAdd={onAddCustomModel} disabled={isRefreshingModels} /></div>}
                         </div>
                         <div className="mb-3">
                           <div className="mb-2 text-sm font-medium text-stone-900">质量</div>
